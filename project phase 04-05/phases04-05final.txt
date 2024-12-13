@@ -1,0 +1,1042 @@
+import tkinter as tk
+from tkinter import ttk, messagebox, simpledialog, filedialog
+import os
+import calendar
+from datetime import datetime
+from tkcalendar import Calendar
+from PIL import Image, ImageTk
+
+print("Current working dir:", os.getcwd())
+os.chdir('/Users/marissa/Desktop/CMPT 120L')
+from tkinter import filedialog
+
+'''''''''''''''''''''''''''
+TEAM MOMAP - Task Management System 
+Desc: A task management system with kinter GUI, and caesar cipher for password encryption
+
+
+
+'''''''''''''''''''''''''''
+
+COMMON_BG_COLOR = "white"
+
+encryptionShift = 16  # number of characters shifted
+
+
+# CAESAR CIPHER FUNCTION #
+def encrypt(text, shift=encryptionShift):
+    return ''.join(chr((ord(char) - 32 + shift) % 95 + 32) for char in
+                   text)  # ensures that characters stay within the bounds of ASCII 32 - 126 during encryption
+
+def decrypt(text, shift=encryptionShift):
+    return ''.join(chr((ord(char) - 32 - shift) % 95 + 32) for char in text)
+
+
+users = {
+    "admin": {"password": encrypt("adminpass"), "tasks": []}}  # encrypts "adminpass", sets user and password for admin
+
+class UserManagementPage(tk.Frame):
+    def __init__(self, parent):
+            super().__init__(parent, bg="white")
+            tk.Label(self, text="User Management", font=("Montserrat", 24), bg="white", fg="black").pack(pady=20)
+            tk.Button(self, text="Delete My Account", font=("Montserrat", 15), command=self.delete_my_account).pack(pady=10)
+            tk.Button(self, text="Change Admin Credentials", font=("Montserrat", 15), command=self.change_admin_credentials).pack(pady=10)
+            tk.Button(self, text="Back", font= ("Montserrat", 15), command=lambda: parent.show_page(TaskPage)).pack(pady=10)
+
+    def delete_my_account(self):
+        username = self.master.current_user
+        if username == "admin":
+            messagebox.showerror("Error", "Admin account cannot be deleted.")
+            return
+
+        confirm = messagebox.askyesno("Confirm Deletion", f"Are you sure you want to delete your account '{username}'?")
+        if confirm:
+            del users[username]
+            self.master.save_users()
+            messagebox.showinfo("Success", "Your account has been deleted.")
+            self.master.current_user = None
+            self.master.show_page(WelcomePage)
+
+
+    def delete_user(self):
+        if self.master.current_user != "admin":
+            messagebox.showerror("Error", "Only the admin can delete other users.")
+            return
+
+        username = tk.simpledialog.askstring("Delete User", "Enter the username to delete:")
+        if not username:
+            return
+
+        if username == "admin":
+            messagebox.showerror("Error", "Cannot delete the admin account.")
+        elif username in users:
+            confirm = messagebox.askyesno("Confirm Deletion", f"Are you sure you want to delete '{username}'?")
+            if confirm:
+                del users[username]
+                self.master.save_users()
+                messagebox.showinfo("Success", f"User '{username}' has been deleted.")
+        else:
+            messagebox.showerror("Error", f"User '{username}' does not exist.")
+
+
+    def change_admin_credentials(self):
+        if self.master.current_user != "admin":
+            messagebox.showerror("Error", "Only the admin can change credentials.")
+            return
+
+        new_username = tk.simpledialog.askstring("Change Admin Username", "Enter new admin username:")
+        if not new_username:
+            return
+
+        new_password = tk.simpledialog.askstring("Change Admin Password", "Enter new admin password:", show="*")
+        if not new_password:
+            return
+
+        del users["admin"]  # Remove old admin credentials
+        users[new_username] = {"password": encrypt(new_password), "tasks": []}
+        self.master.current_user = new_username
+        self.master.save_users()
+        messagebox.showinfo("Success", "Admin credentials have been updated.")
+
+    def logout_and_go_to_welcome(self):
+        self.master.current_user = None  # Clear the logged-in user
+        messagebox.showinfo("Logout", "You have been logged out.")
+        self.master.show_page(WelcomePage)  # Redirect to the WelcomePage
+
+
+
+class TaskManagementSystem(tk.Tk):  # root
+    def __init__(self):
+        super().__init__()
+        self.title("Task Management System")  # self = instance of the class
+        self.geometry("650x500")
+        self.Pages = {}
+        self.current_user = None
+        self.load_users()
+
+        for Page in (WelcomePage, AboutUsPage, AdminLoginPage, UserLoginPage, RegisterPage, TaskPage,
+                     CalendarPage, UserManagementPage):  #  iterates over a tuple of classes representing the different pages
+            page = Page(self)
+            self.Pages[Page] = page  # stores pages in dictionary called Pages
+            page.grid(row=0, column=0, sticky="nsew")
+
+        self.grid_rowconfigure([0], weight=1)  #  centers menu
+        self.grid_columnconfigure([0], weight=1)  #  centers menu
+
+        self.show_page(WelcomePage)
+        self.load_task()
+
+
+         #  logout user and redirect to welcome page
+    def add_logout_button(self, frame):
+        logout_button = tk.Button(
+            frame,
+            text="Logout",
+            command=self.logout,
+            bg="white",
+            fg="black",
+            font=("Montserrat", 12),
+            borderwidth=0,
+            highlightthickness=0,
+        )
+        logout_button.place(relx=0.95, rely=0.02, anchor="ne")
+
+    def show_page(self, page_class):
+        page = self.Pages[page_class]
+        page.tkraise()
+
+    def load_users(self):   #  loads users stored in the text file
+        try:
+            with open("users.txt", "r") as file:
+                for line in file:
+                    username, password = line.strip().split("|")
+                    if username not in users:
+                        users[username] = {"password": password, "tasks": []}
+            print(f"Loaded users: {users}")
+        except FileNotFoundError:
+            print("No user file found.")
+
+    def save_users(self):
+        try:
+            with open("users.txt", "w") as file:
+                for username, data in users.items():
+                    file.write(f"{username}|{data['password']}\n")
+            print("Users saved successfully.")
+        except Exception as e:
+            print(f"Error saving users: {e}")
+
+    def load_task(self):
+        print("Loading tasks...")
+        try:
+            with open("tms_tasks.txt", "r") as file:
+                for line in file:
+                    user, title, time, duration, description = line.strip().split("|")
+                    if user not in users:
+                        users[user] = {"password": "", "tasks": []}
+                    users[user]["tasks"].append({
+                        "title": title.strip(),  # strips invisible characters
+                        "time": time.strip(),
+                        "duration": duration.strip(),
+                        "description": description.strip()
+                    })
+            print(f"Users from task list: {users}")
+        except FileNotFoundError:
+            pass
+        print("No tasks found")
+
+    def save_task(self):
+        print("Saving tasks to tms_tasks.txt")
+        try:
+            with open("tms_tasks.txt", "w") as file:
+                for user, data in users.items():
+                    for task in data["tasks"]:
+                        print(f"Saving task: {task}")  # confirms task data is saved
+                        file.write(f"{user}|{task['title']}|{task['time']}|{task['duration']}|{task['description']}\n")
+            print("Task saved successfully")
+        except Exception as e:
+            print(f"Error saving task: {e}")
+
+
+# WELCOME PAGE #
+class WelcomePage(tk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent, bg=COMMON_BG_COLOR)
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure(
+            "Rounded.TButton",
+            background="grey",  #  button background color
+            foreground="black",  #  text color
+            font=("Montserrat", 18),
+            borderwidth=1,
+            relief="flat",
+            padding=10
+        )
+        style.map(
+            "Rounded.TButton",
+            background=[("active", "lightgrey")],  #  changes button color when hovered
+            foreground=[("active", "black")]
+        )
+
+        #  opens the logo and converts transparent areas to the background color
+        bg_color = "white"
+        logo_image = Image.open("momap_logo-removebg-preview.png").convert("RGBA")
+
+        #  creates a solid background with the same size as the logo
+        background = Image.new("RGBA", logo_image.size, bg_color)
+        combined = Image.alpha_composite(background, logo_image)
+
+        #  uses the processed image in tkinter
+        self.logo_image_tk = ImageTk.PhotoImage(combined)
+        logo_label = tk.Label(self, image=self.logo_image_tk, bg="white")
+        logo_label.image = self.logo_image_tk  # Keep a reference to prevent garbage collection
+        logo_label.pack(pady=20)
+
+        ttk.Button(self, text="About Us", style="Rounded.TButton",
+                   command=lambda: parent.show_page(AboutUsPage)).pack(pady=10)
+        ttk.Button(self, text="Admin Login", style="Rounded.TButton",
+                   command=lambda: parent.show_page(AdminLoginPage)).pack(pady=10)
+        ttk.Button(self, text="User Login", style="Rounded.TButton",
+                   command=lambda: parent.show_page(UserLoginPage)).pack(pady=10)
+        ttk.Button(self, text="Register", style="Rounded.TButton",
+                   command=lambda: parent.show_page(RegisterPage)).pack(pady=10)
+        ttk.Button(self, text="Exit", style="Rounded.TButton",
+                   command=self.quit_application).pack(pady=10)
+
+    def quit_application(self):
+        messagebox.showinfo("TMS", "Thank you for using Task Management System!")
+        self.quit()
+
+
+class RegisterPage(tk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent, bg="white")  #  set background color
+
+        #  title Label
+        tk.Label(self, text="Register", font=("Montserrat", 24), bg=COMMON_BG_COLOR, fg="black").pack(pady=20)
+
+        #  username Entry
+        tk.Label(self, text="Username", font=("Montserrat", 15), bg=COMMON_BG_COLOR, fg="black").pack(pady=5)
+        self.username_entry = tk.Entry(self, font=("Montserrat", 15))
+        self.username_entry.pack(pady=5)
+
+        #  password Entry
+        tk.Label(self, text="Password", font=("Montserrat", 15), bg=COMMON_BG_COLOR, fg="black").pack(pady=5)
+        self.password_entry = tk.Entry(self, show="*", font=("Montserrat", 15))
+        self.password_entry.pack(pady=5)
+
+        #  register Button
+        tk.Button(self, text="Register", font=("Montserrat", 15), command=self.register_user).pack(pady=10)
+
+        #  back Button
+        tk.Button(self, text="Back", font=("Montserrat", 15),
+                  command=lambda: parent.show_page(WelcomePage)).pack(pady=10)
+
+    def register_user(self):
+        username = self.username_entry.get().strip()
+        password = self.password_entry.get().strip()
+
+        #  validates inputs
+        if not username:
+            messagebox.showerror("Error", "Username is required.")
+            return
+        if not password:
+            messagebox.showerror("Error", "Password is required.")
+            return
+        if username in users:
+            messagebox.showerror("Error", "Username already exists.")
+            return
+
+        #  registers the User
+        users[username] = {"password": encrypt(password), "tasks": []}
+        self.master.save_users()  # Save to file
+        messagebox.showinfo("Success", f"Account '{username}' created successfully.")
+        self.master.show_page(WelcomePage)  #  redirects to the WelcomePage
+
+# ADMIN LOGIN PAGE #
+class AdminLoginPage(tk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent, bg=COMMON_BG_COLOR)
+        self.parent = parent
+        self.failed_attempts = 0
+        tk.Label(self, text="Admin Login", font=("Montserrat", 24), bg="white", fg="black").pack(pady=20)
+
+        tk.Label(self, text="Username", font=("Montserrat", 15), bg=COMMON_BG_COLOR, fg="black").pack(pady=5)
+        self.username_entry = tk.Entry(self)
+        self.username_entry.pack()
+
+        tk.Label(self, text="Password", font=("Montserrat", 15), bg=COMMON_BG_COLOR, fg="black").pack(pady=5)
+        self.password_entry = tk.Entry(self, show="*")
+        self.password_entry.pack()
+
+        login_button = tk.Button(self, text="Login", font=("Montserrat", 15), command=self.login)
+        login_button.pack(pady=5)
+        back_button = tk.Button(self, text="Back", font=("Montserrat", 15),
+                                command=lambda: parent.show_page(WelcomePage))
+        back_button.pack(pady=5)
+
+    def login(self):
+        username = self.username_entry.get()
+        password = self.password_entry.get()
+
+        if username in users and users[username]["password"] == encrypt(password):
+            self.master.current_user = username
+            messagebox.showinfo("Login Successful", f"Welcome, {username}!")
+            self.master.show_page(TaskPage)
+        else:
+            self.failed_attempts += 1
+            if self.failed_attempts >= 3:
+                messagebox.showerror("Too Many Failed Attempts",
+                                     "Too many failed login attempts. Redirecting to the Welcome page.")
+                self.parent.show_page(WelcomePage)  # Redirects to WelcomePage after 3 failed attempts
+            else:
+                messagebox.showerror("Login Failed",
+                                     f"Invalid user credentials. You have {3 - self.failed_attempts} attempts left.")
+
+
+class AboutUsPage(tk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent, bg="white")
+
+        #  Title Label
+        tk.Label(self, text="About Us", font=("Montserrat", 24), bg=COMMON_BG_COLOR, fg="black").pack(pady=20)
+
+        #  Frame for Scrollable Content
+        frame = tk.Frame(self)
+        frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+
+        #  Scrollbar
+        scrollbar = tk.Scrollbar(frame, orient=tk.VERTICAL)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        #  Text Widget with scroll
+        text_widget = tk.Text(frame, wrap=tk.WORD, yscrollcommand=scrollbar.set, font=("Montserrat", 15), padx=15, pady=15)
+
+        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        #  Configure the scrollbar to Work with the text widget
+        scrollbar.config(command=text_widget.yview)
+
+        # About Us content displayed directly on the page
+        content = """ Founding Members:
+        
+            1. Marissa Ratschki - Team Lead
+            
+            "My name is Marissa Ratschki and I am a Sophomore majoring in Cybersecurity at Marist College. Although limited, I have experience in HTML, CSS, and Python through collegiate level courses at Champlain College. My choice to work with team MOMAP was based on the group’s eagerness to learn within the computer science field, as well as their dedication to academia and willingness to collaborate."\n
+            2. Marlene Santiago-Cuevas - Team Member
+            
+            "My major is Computer Science. I began my interest in programming in my junior year of high school and have not lost interest since. I began to take classes surrounding the subject such as Programming 101 and 102 and AP Computer Science A. As a first-year student in college, it has been exciting to engage with a group of young adults who share the same passion. I easily connected with my team members, and that is essential when working together to create an exceptional project."\n
+            3. Anna Chen - Team Member
+            
+            "My name is Anna Chen, and I’m a junior studying Business Administration with a concentration in Marketing and a minor in Cybersecurity. I have some experience in coding from my AP course in high school, but otherwise, I don’t know much about Python. I am very excited to work with a group of welcoming and intelligent women and can’t wait to see what we can do together."\n
+            4. Prashna Khadka - Team Member
+            
+            "I’m a freshman majoring in Computer Science with a concentration in Software Development. I have a little bit of experience with Python from my high school computer science course but it was primarily focused on pseudocode. I wanted to work with my current team members because they are proactive and committed to creating a successful project."\n 
+            5. Olufunke Gando - Team Member
+            
+            "I am 20 years old. I am a freshman taking Intro to Programming since it is a requirement for my major in Computer Science. I have no prior experience with programming and this is my very first project. I wanted to work with my current team members because we all gravitated toward one another, and they are all women who are confident in themselves and what they are doing." 
+            """
+        text_widget.insert(tk.END, content)
+
+        #  Disables text widget to prevent edits
+        text_widget.config(state=tk.DISABLED)
+
+        #  removes background text to prevent overlapping
+        for widget in self.winfo_children():
+            if isinstance(widget, tk.Label) and widget.cget("text") == content.strip():
+                widget.destroy()
+
+        back_button = tk.Button(self, text="Back", font=("Montserrat", 15),
+                                command=lambda: parent.show_page(WelcomePage))
+        back_button.pack(pady=5)
+
+
+# USER LOGIN PAGE #
+
+class UserLoginPage(tk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent, bg="white")
+        self.parent = parent
+        self.failed_attempts = 0
+        tk.Label(self, text="User Login", font=("Montserrat", 24), bg=COMMON_BG_COLOR, fg="black").pack(pady=20)
+
+        tk.Label(self, text="Username", font=("Montserrat", 15), bg=COMMON_BG_COLOR, fg="black").pack(pady=5)
+        self.username_entry = tk.Entry(self)
+        self.username_entry.pack()
+
+        tk.Label(self, text="Password", font=("Montserrat", 15), bg=COMMON_BG_COLOR, fg="black").pack(pady=5)
+        self.password_entry = tk.Entry(self, show="*")
+        self.password_entry.pack()
+
+        login_button = tk.Button(self, text="Login", font=("Montserrat", 15), command=self.login)
+        login_button.pack(pady=5)
+        back_button = tk.Button(self, text="Back", font=("Montserrat", 15),
+                                command=lambda: parent.show_page(WelcomePage))
+        back_button.pack(pady=5)
+
+    def login(self):
+        username = self.username_entry.get()
+        password = self.password_entry.get()
+
+        if username in users and users[username]["password"] == encrypt(password):
+            self.master.current_user = username
+            messagebox.showinfo("Login Successful", f"Welcome, {username}!")
+            self.master.show_page(TaskPage)
+        else:
+            self.failed_attempts += 1
+            if self.failed_attempts >= 3:
+                messagebox.showerror("Too Many Failed Attempts",
+                                     "Too many failed login attempts. Redirecting to the Welcome page.")
+                self.parent.show_page(WelcomePage)  # Redirects to WelcomePage after 3 failed attempts
+            else:
+                messagebox.showerror("Login Failed",
+                                     f"Invalid user credentials. You have {3 - self.failed_attempts} attempts left.")
+
+
+
+# TASK MANAGEMENT MENU/WELCOME PAGE #
+class TaskPage(tk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent, bg="white")
+        self.master = parent
+        tk.Label(self, text="Welcome to Task Management System", font=("Montserrat", 24), bg="white", fg="black").pack(pady=20)  ###
+        tk.Button(self, text="Add Task", font=("Montserrat", 15), command=self.add_task).pack(pady=10)
+        tk.Button(self, text="Edit Task", font=("Montserrat", 15), command=self.edit_task).pack(pady=10)
+        tk.Button(self, text="Remove Task", font=("Montserrat", 15), command=self.remove_task).pack(pady=10)
+        tk.Button(self, text="Search Tasks",  font=("Montserrat", 15), command=self.search_tasks).pack(pady=10)
+        tk.Button(self, text="View Calendar", font=("Montserrat", 15), command=lambda: parent.show_page(CalendarPage)).pack(pady=10)
+
+        tk.Button(self, text="User Management", font=("Montserrat", 15), command=self.open_user_management).pack(pady=10)
+
+        tk.Button(self, text="Log out", font=("Montserrat", 15), command=self.logout_and_go_to_welcome).pack(pady=10)
+
+    def logout_and_go_to_welcome(self):
+        self.master.current_user = None  #  clears the logged-in user
+        messagebox.showinfo("Logout", "You have been logged out.")
+        self.master.show_page(WelcomePage)  #  redirects to the WelcomePage
+
+    def open_user_management(self):
+        self.master.show_page(UserManagementPage)
+
+        # ADD TASK PAGE #
+    def add_task(self):  # asks user to input fields. if nothing is entered, the add task window closes
+            add_task_window = tk.Toplevel(self, bg="white")
+            add_task_window.title("Add Task")
+            add_task_window.geometry("600x500")
+
+            # Logout function: Close the add task window and redirect to the welcome page
+            def logout():
+                add_task_window.destroy()
+                self.master.show_page(WelcomePage)  #  Directs to WelcomePage
+
+            tk.Button(add_task_window, text="Logout", command=logout, font=("Montserrat", 15)).pack(anchor="ne",
+                                                                                                    padx=10, pady=10)
+
+            # Task entry form and save functionality
+            def save_task():
+                username = self.master.current_user
+                task = {}
+
+                task_title = title_entry.get().strip()
+
+                # Check for duplicate task title
+                if username in users and any(
+                        task["title"].lower() == task_title.lower() for task in users[username]["tasks"]):
+                    messagebox.showerror("Error",
+                                         f"A task with the title '{task_title}' already exists. Please use a different name.")
+                    return  # Stop execution if a duplicate is found
+
+                task["title"] = task_title
+                task["time"] = time_entry.get().strip()
+                task["duration"] = duration_entry.get().strip()
+                task["description"] = description_entry.get().strip()
+
+                # Validate that all fields are filled
+                if not task["title"] or not task["time"] or not task["duration"] or not task["description"]:
+                    messagebox.showerror("Error", "All fields must be filled.")
+                    return
+
+                # Save the task for the current user
+                if username in users:
+                    users[username]["tasks"].append(task)
+                    print(f"Task added: {task['title']}")
+                    self.master.save_task()
+                    messagebox.showinfo("Success", "Task added.")
+                    add_task_window.destroy()
+                else:
+                    messagebox.showerror("Error", "User not found.")
+
+            #  creates input fields for task details
+            tk.Label(add_task_window, text="Title:", bg=COMMON_BG_COLOR, fg="black").pack(pady=5)
+            title_entry = tk.Entry(add_task_window)
+            title_entry.pack(pady=5)
+
+            tk.Label(add_task_window, text="Time:", bg=COMMON_BG_COLOR, fg="black").pack(pady=5)
+            time_entry = tk.Entry(add_task_window)
+            time_entry.pack(pady=5)
+
+            tk.Label(add_task_window, text="Duration:", bg=COMMON_BG_COLOR, fg="black").pack(pady=5)
+            duration_entry = tk.Entry(add_task_window)
+            duration_entry.pack(pady=5)
+
+            tk.Label(add_task_window, text="Description:", bg=COMMON_BG_COLOR, fg="black").pack(pady=5)
+            description_entry = tk.Entry(add_task_window)
+            description_entry.pack(pady=5)
+
+            # Save and Cancel buttons
+            tk.Button(add_task_window, text="Save Task", command=save_task, font=("Montserrat", 15)).pack(pady=20)
+            tk.Button(add_task_window, text="Cancel", command=add_task_window.destroy, font=("Montserrat", 15)).pack(
+                pady=20)
+
+    ########### EDIT TASK ##############
+
+    def edit_task(self):
+        username = self.master.current_user
+
+        if not users[username]["tasks"]:
+            messagebox.showinfo("No Tasks Available", "No tasks available to edit.")
+            return
+
+        # Create the Edit Task window
+        edit_window = tk.Toplevel(self)
+        edit_window.title("Edit Tasks")
+        edit_window.geometry("800x500")
+        edit_window.configure(bg="white")
+
+        tree = ttk.Treeview(edit_window, columns=("Title", "Time", "Duration", "Description"), show="headings",
+                            height=15)
+        tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Define columns
+        tree.heading("Title", text="Task Title")
+        tree.heading("Time", text="Time")
+        tree.heading("Duration", text="Duration")
+        tree.heading("Description", text="Description")
+
+        tree.column("Title", anchor="center", width=200)
+        tree.column("Time", anchor="center", width=100)
+        tree.column("Duration", anchor="center", width=100)
+        tree.column("Description", anchor="center", width=300)
+
+        # Populate Treeview with tasks
+        for i, task in enumerate(users[username]["tasks"]):
+            tree.insert("", "end", iid=i, values=(task["title"], task["time"], task["duration"], task["description"]))
+
+        # Button Frame
+        button_frame = tk.Frame(edit_window, bg="white")
+        button_frame.pack(pady=10)
+
+        # Logout Button
+        def logout_and_close():
+            self.master.current_user = None
+            edit_window.destroy()  # Close the Edit Task window
+            messagebox.showinfo("Logout", "You have been logged out.")
+            self.master.show_page(WelcomePage)  # Redirect to WelcomePage
+
+        tk.Button(
+            button_frame,
+            text="Logout",
+            command=logout_and_close,
+            font=("Montserrat", 15),
+            bg="grey",
+            fg="black",
+        ).grid(row=0, column=0, padx=10)
+
+
+        #  close button
+        tk.Button(
+            button_frame,
+            text="Close",
+            command=edit_window.destroy,
+            font=("Montserrat", 15),
+            bg="grey",
+            fg="black"
+        ).grid(row=0, column=2)
+
+        #  function to edit a selected task
+        def edit_task_popup():
+            selected_item = tree.selection()
+            if not selected_item:
+                messagebox.showerror("Error", "No task selected.")
+                return
+
+            item_id = selected_item[0]
+            task = users[username]["tasks"][int(item_id)]
+
+            # Creates a popup window for editing
+            popup = tk.Toplevel(edit_window)
+            popup.title("Edit Task")
+            popup.geometry("400x400")
+
+            # Editable fields
+            tk.Label(popup, text="Task Title:").pack(pady=5)
+            title_entry = tk.Entry(popup, font=("Montserrat", 15))
+            title_entry.insert(0, task["title"])
+            title_entry.pack(pady=5)
+
+            tk.Label(popup, text="Time:").pack(pady=5)
+            time_entry = tk.Entry(popup, font=("Montserrat", 15))
+            time_entry.insert(0, task["time"])
+            time_entry.pack(pady=5)
+
+            tk.Label(popup, text="Duration:").pack(pady=5)
+            duration_entry = tk.Entry(popup, font=("Montserrat", 15))
+            duration_entry.insert(0, task["duration"])
+            duration_entry.pack(pady=5)
+
+            tk.Label(popup, text="Description:").pack(pady=5)
+            description_entry = tk.Entry(popup, font=("Montserrat", 15))
+            description_entry.insert(0, task["description"])
+            description_entry.pack(pady=5)
+
+            def save_changes():
+                new_title = title_entry.get().strip()
+                new_time = time_entry.get().strip()
+                new_duration = duration_entry.get().strip()
+                new_description = description_entry.get().strip()
+
+                # Validate input
+                if not new_title or not new_time or not new_duration or not new_description:
+                    messagebox.showerror("Error", "All fields must be filled.")
+                    return
+
+                # Check for duplicate task titles
+                if any(t["title"].lower() == new_title.lower() for t in users[username]["tasks"] if t != task):
+                    messagebox.showerror("Error", f"A task with the title '{new_title}' already exists.")
+                    return
+
+                # Updates task details
+                task["title"] = new_title
+                task["time"] = new_time
+                task["duration"] = new_duration
+                task["description"] = new_description
+
+                # Updates treeview
+                tree.item(item_id, values=(new_title, new_time, new_duration, new_description))
+
+                self.master.save_task()
+                messagebox.showinfo("Success", "Task updated successfully!")
+                popup.destroy()
+
+            tk.Button(popup, text="Save Changes", command=save_changes, bg="white", fg="black").pack(pady=10)
+            tk.Button(popup, text="Cancel", command=popup.destroy, bg="white", fg="black").pack(pady=5)
+
+
+
+
+        # Buttons for edit/delete
+        button_frame = tk.Frame(edit_window, bg="#f4f4f9")
+        button_frame.pack(pady=10)
+
+        tk.Button(button_frame, text="Edit Selected Task", command=edit_task_popup, font=("Montserrat", 15), bg="#007bff",
+                  fg="black").grid(row=0, column=0, padx=10)
+        logout_button = tk.Button(remove_window, text="Logout", command=logout)
+        logout_button.pack(anchor="ne", padx=10, pady=10)
+        tk.Button(button_frame, text="Close", command=edit_window.destroy, font=("Montserrat", 15)).grid(row=0, column=2,
+                                                                                                      padx=10)
+
+        # removes the task based on input user provided
+
+    def remove_task(self):
+
+            remove_window = tk.Toplevel(self, bg="white")
+            remove_window.title("Remove Task")
+            remove_window.geometry("400x300")
+
+            username = self.master.current_user
+
+            # Logout button
+            def logout():
+                remove_window.destroy()
+                self.master.show_page(WelcomePage)
+
+            logout_button = tk.Button(remove_window, text="Logout", font=("Montserrat", 15), command=logout)
+            logout_button.pack(anchor="ne", padx=10, pady=10)
+
+            #  entry field to enter which task to remove
+            tk.Label(remove_window, text="Enter task title to remove:", font=("Montserrat", 15), bg=COMMON_BG_COLOR,
+                     fg="black").pack(pady=10)
+            task_title_entry = tk.Entry(remove_window, width=30)
+            task_title_entry.pack(pady=5)
+
+            #  removes the task based on input user provided
+            def remove():
+                task_title = task_title_entry.get().strip()  # Retrieve title from the above entry field
+
+                if not task_title:
+                    messagebox.showerror("Error", "Please enter a task title")
+                    return
+
+                if username in users:
+                    task_to_remove = None
+                    print(f"Looking for task title: {task_title.strip().lower()}")  # Debugging log
+                    for task in users[username]["tasks"]:
+                        print(
+                            f"Comparing task '{task_title.strip().lower()}' with stored task '{task['title'].strip().lower()}'")  # Debugging log
+                        if task["title"].strip().lower() == task_title.strip().lower():  # Case-insensitive comparison
+                            task_to_remove = task
+                            break
+
+                    if task_to_remove:
+                        users[username]["tasks"].remove(task_to_remove)
+                        self.master.save_task()
+                        messagebox.showinfo("Success", f"Task '{task_title}' removed.")
+                        remove_window.destroy()
+                    else:
+                        messagebox.showwarning("Not Found", f"Task '{task_title}' not found.")
+                else:
+                    messagebox.showerror("Error", "User not found.")
+
+            #  buttons for remove task and cancel
+            remove_button = tk.Button(remove_window, text="Remove Task", font=("Montserrat", 15), command=remove)
+            remove_button.pack(pady=10)
+
+            cancel_button = tk.Button(remove_window, text="Cancel", font=("Montserrat", 15),
+                                      command=remove_window.destroy)
+            cancel_button.pack(pady=10)
+
+    def search_tasks(self):
+        # Create the main Search Task window
+        search_window = tk.Toplevel(self)
+        search_window.title("Search Tasks")
+        search_window.geometry("650x500")
+        search_window.configure(bg="white")
+
+        # Logout function: Fully log out the user
+        def logout():
+            self.master.current_user = None  # Clear the logged-in user
+            search_window.destroy()
+            messagebox.showinfo("Logout", "You have been logged out.")  #  notifies the user
+            self.master.show_page(WelcomePage)  # Redirect to Welcome Page
+
+        # Add the Logout Button
+        tk.Button(
+            search_window,
+            text="Logout",
+            command=logout,
+            font=("Montserrat", 12),
+            bg="white",
+            fg="black",
+            width=10,
+            height=2,
+        ).place(relx=1.0, rely=0.0, anchor="ne", x=-10, y=10)
+
+        # Label and Entry for Search Input
+        tk.Label(
+            search_window,
+            text="Enter Task Title:",
+            bg="white",
+            fg="black",
+            font=("Montserrat", 20),
+        ).pack(pady=15)
+        search_entry = tk.Entry(search_window, font=("Montserrat", 12))
+        search_entry.pack(pady=10)
+
+        # Frame for Task Listbox and Scrollbar
+        frame = tk.Frame(search_window, bg="white")
+        frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Scrollbar and listbox
+        list_scrollbar = tk.Scrollbar(frame, orient=tk.VERTICAL)
+        task_listbox = tk.Listbox(
+            frame,
+            yscrollcommand=list_scrollbar.set,
+            font=("Montserrat", 12),
+            bg="white",
+            fg="black",
+        )
+        list_scrollbar.config(command=task_listbox.yview)
+        list_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        task_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Function to Perform the Search
+        def perform_search():
+            search_term = search_entry.get().strip().lower()  # Get the search term
+            task_listbox.delete(0, tk.END)  # Clear previous results
+
+            username = self.master.current_user
+            if username in users:
+                results = [task for task in users[username]["tasks"] if search_term in task["title"].lower()]
+                if results:
+                    for task in results:
+                        task_listbox.insert(tk.END, task["title"].strip())
+                else:
+                    messagebox.showinfo("No Results", "No tasks match your search.")
+            else:
+                messagebox.showerror("Error", "User not found.")
+
+        # Button to Trigger Search
+        tk.Button(
+            search_window,
+            text="Search",
+            command=perform_search,
+            font=("Montserrat", 12),
+            bg="white",
+            fg="black",
+            width=10,
+            height=2,
+        ).pack(pady=10)
+
+        # Close Button
+        tk.Button(
+            search_window,
+            text="Close",
+            command=search_window.destroy,
+            font=("Montserrat", 12),
+            bg="white",
+            fg="black",
+            width=10,
+            height=2,
+        ).pack(pady=10)
+
+        # Function to Show Task Details
+        def show_task_details(event):
+            selection = task_listbox.curselection()
+            if not selection:
+                return
+            selected_task_title = task_listbox.get(selection[0]).strip().lower()
+            print(f"Debug: Selected task title: {selected_task_title}")
+
+            username = self.master.current_user
+            if not username:
+                messagebox.showerror("Error", "No user logged in")
+                return
+
+            task_details = next(
+                (task for task in users[username]["tasks"] if task["title"].strip().lower() == selected_task_title),
+                None
+            )
+            print(f"Retrieved task details: {task_details}")
+
+            if task_details:
+                detail_window = tk.Toplevel(self)
+                detail_window.title("Task Details")
+                detail_window.geometry("400x300")
+                tk.Label(detail_window, text=f"Title: {task_details['title']}", font=("Montserrat", 12)).pack(pady=5)
+                tk.Label(detail_window, text=f"Time: {task_details['time']}", font=("Montserrat", 12)).pack(pady=5)
+                tk.Label(detail_window, text=f"Duration: {task_details['duration']}", font=("Montserrat", 12)).pack(
+                    pady=5)
+                tk.Label(detail_window, text=f"Description: {task_details['description']}",
+                         font=("Montserrat", 12)).pack(pady=5)
+                tk.Button(detail_window, text="Close", command=detail_window.destroy, font=("Montserrat", 12)).pack(
+                    pady=10)
+            else:
+                messagebox.showerror("Error", "Task not found.")
+
+        # Bind Listbox Selection to Show Task Details
+        task_listbox.bind("<<ListboxSelect>>", show_task_details)
+
+
+class CalendarPage(tk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent, bg="white")
+        self.master = parent
+        self.current_month = datetime.now().month
+        self.current_year = datetime.now().year
+        self.selected_date = None
+
+        # Title Label
+        tk.Label(self, text="Task Calendar", font=("Montserrat", 24), bg=COMMON_BG_COLOR, fg="black").pack(pady=20)
+
+        # Logout Button at Top-Right
+        tk.Button(
+            self,
+            text="Logout",
+            command=self.logout,
+            font=("Montserrat", 12),
+            bg=COMMON_BG_COLOR,
+            fg="black",
+            width=10,
+            height=2,
+        ).place(relx=1.0, rely=0.0, anchor="ne", x=-10, y=10)
+
+        # Navigation Frame
+        nav_frame = tk.Frame(self, bg=COMMON_BG_COLOR)
+        nav_frame.pack(pady=10)
+
+        # Previous Month Button
+        tk.Button(nav_frame, text="<", command=self.prev_month, bg=COMMON_BG_COLOR, fg="black", width=4, height=2).pack(side=tk.LEFT, padx=10)
+
+        # Month-Year Label
+        self.month_label = tk.Label(nav_frame, text=self.get_month_year_label(), font=("Montserrat", 15), bg=COMMON_BG_COLOR, fg="black")
+        self.month_label.pack(side=tk.LEFT)
+
+        # Next Month Button
+        tk.Button(nav_frame, text=">", command=self.next_month, bg=COMMON_BG_COLOR, fg="black", width=4, height=2).pack(side=tk.LEFT, padx=10)
+
+        # Calendar Frame
+        self.calendar_frame = tk.Frame(self, bg=COMMON_BG_COLOR)
+        self.calendar_frame.pack(pady=10)
+        self.create_calendar()
+
+        # Task Listbox
+        self.task_listbox = tk.Listbox(self, height=10, width=50, bg="white", fg="black", font=("Montserrat", 12))
+        self.task_listbox.pack(pady=10)
+
+        # Back Button
+        tk.Button(
+            self,
+            text="Back",
+            command=lambda: parent.show_page(TaskPage),
+            bg=COMMON_BG_COLOR,
+            fg="black",
+            width=10,
+            height=2,
+        ).pack(pady=10)
+
+    def logout(self):
+        self.master.current_user = None
+        messagebox.showinfo("Logout", "You have been logged out.")
+        self.master.show_page(WelcomePage)
+
+
+
+    def logout(self):
+        # Logout Logic
+        self.master.current_user = None
+        messagebox.showinfo("Logout", "You have been logged out.")
+        self.master.show_page(WelcomePage)
+
+    def create_calendar(self):
+        # Clear Previous Calendar
+        for widget in self.calendar_frame.winfo_children():
+            widget.destroy()
+
+        # Style for Calendar Buttons
+        style = ttk.Style()
+        style.configure(
+            "Calendar.Rounded.TButton",
+            background=COMMON_BG_COLOR,
+            foreground="black",
+            font=("Montserrat", 10),
+            borderwidth=1,
+            relief="flat",
+            padding=5
+        )
+        style.map(
+            "Calendar.Rounded.TButton",
+            background=[("active", "#d3d3d3")],
+            relief=[("pressed", "groove")]
+        )
+
+        days_in_month = calendar.monthrange(self.current_year, self.current_month)[1]
+        first_weekday = calendar.monthrange(self.current_year, self.current_month)[0]
+
+        row = 1
+        col = first_weekday
+
+        # Weekday Labels
+        for day in ["Mon", "Tues", "Wed", "Thur", "Fri", "Sat", "Sun"]:
+            tk.Label(self.calendar_frame, text=day, font=("Montserrat", 15), width=4, bg=COMMON_BG_COLOR, fg="black").grid(
+                row=0,
+                column=["Mon", "Tues", "Wed", "Thur", "Fri", "Sat", "Sun"].index(day)
+            )
+
+        # Calendar Buttons
+        for day in range(1, days_in_month + 1):
+            day_button = ttk.Button(
+                self.calendar_frame,
+                text=str(day),
+                style="Calendar.Rounded.TButton",
+                command=lambda d=day: self.select_date(d),
+            )
+            day_button.grid(row=row, column=col, padx=2, pady=2)
+            col += 1
+            if col > 6:
+                col = 0
+                row += 1
+
+    def get_month_year_label(self):
+        return f"{calendar.month_name[self.current_month]} {self.current_year}"
+
+    def prev_month(self):
+        if self.current_month == 1:
+            self.current_month = 12
+            self.current_year -= 1
+        else:
+            self.current_month -= 1
+        self.month_label.config(text=self.get_month_year_label())
+        self.create_calendar()
+
+    def next_month(self):
+        if self.current_month == 12:
+            self.current_month = 1
+            self.current_year += 1
+        else:
+            self.current_month += 1
+        self.month_label.config(text=self.get_month_year_label())
+        self.create_calendar()
+
+    def select_date(self, day):
+        self.selected_date = f"{self.current_year}-{self.current_month:02d}-{day:02d}"
+        print(f"Date selected: {self.selected_date}")
+        self.view_tasks()
+
+    def view_tasks(self):
+        self.task_listbox.delete(0, tk.END)
+        print(f"Selected date: {self.selected_date}")
+
+        username = self.master.current_user
+        if not username:
+            messagebox.showerror("Error", "No user logged in")
+            return
+
+        selected_date = self.selected_date
+        if not selected_date:
+            messagebox.showinfo("Info", "Select a date to view tasks")
+            return
+
+        tasks = users.get(username, {}).get("tasks", [])
+        tasks_on_date = [task for task in tasks if task.get("time", "") == selected_date]
+
+        if tasks_on_date:
+            for task in tasks_on_date:
+                self.task_listbox.insert(tk.END, f"{task['title']} - {task['time']}")
+        else:
+            self.task_listbox.insert(tk.END, "No tasks on this date")
+
+
+
+if __name__ == "__main__":
+    app = TaskManagementSystem()
+    app.mainloop()
